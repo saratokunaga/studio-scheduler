@@ -44,3 +44,87 @@ def is_free_midnight(day_bits: str) -> bool:
     if len(day_bits) != 31:
         raise ValueError("day_bitsは31文字想定")
     return day_bits[30] == "0"
+
+
+
+# yomoda
+
+from dataclasses import dataclass
+
+
+@dataclass
+class Slot:
+    studio_id: str
+    studio_name: str
+    start_hm: str
+    stock: int
+    bookable: bool
+
+
+def extract_slots_for_date(week_json: dict, date_iso: str):
+
+    day = week_json["week_time_array"][date_iso]
+    data = day.get("data", {})
+
+    slots = []
+
+    for time_key, arr in data.items():
+
+        for item in arr:
+
+            studio_id = (
+                item.get("ist_no")
+                or item.get("reserve_ist_no")
+                or item.get("institution_no")
+                or item.get("menu_ist_no")
+            )
+
+            if studio_id is None:
+                continue
+
+            slots.append(
+                Slot(
+                    studio_id=str(studio_id),
+                    studio_name=str(item.get("menu_name", "")),
+                    start_hm=item["sttime"],
+                    stock=int(item.get("stock_num", 0)),
+                    bookable=bool(int(item.get("work_disable_flg_free", 0))),
+                )
+            )
+
+    return slots
+
+
+def find_free_studios(
+    week_json,
+    date_iso,
+    start_hm,
+    end_hm,
+):
+
+    slots = extract_slots_for_date(week_json, date_iso)
+
+    required = []
+    t = int(start_hm)
+    while t < int(end_hm):
+        required.append(f"{t:04d}")
+        t += 100
+
+    result = {}
+
+    for slot in slots:
+
+        if slot.start_hm not in required:
+            continue
+
+        if not slot.bookable or slot.stock < 1:
+            continue
+
+        result.setdefault(slot.studio_id, 0)
+        result[slot.studio_id] += 1
+
+    return [
+        studio_id
+        for studio_id, count in result.items()
+        if count == len(required)
+    ]
